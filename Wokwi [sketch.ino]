@@ -1,0 +1,229 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <Wire.h>
+#include <ArduinoJson.h>
+#include <DHT.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH  128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+#define SCREEN_ADDRESS 0x3C
+
+// Pin Mapping
+#define I2C_SDA    8
+#define I2C_SCL    9
+#define DHT_PIN    10
+#define DHT_TYPE   DHT22
+#define TRIG_PIN   5
+#define ECHO_PIN   6
+#define GAS_PIN    7
+#define BUZZER_PIN 15
+
+// Credentials
+const char* WIFI_SSID     = "Wokwi-GUEST";
+const char* WIFI_PASSWORD = "";
+const char* BOT_TOKEN     = "8744256540:AAHkBqFrkHi1BbBPuoeYQLyO0elvVpeLgWk";
+const char* CHAT_ID       = "2132872018";
+const char* NODE_ID       = "SIH26178_S3";
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+DHT dht(DHT_PIN, DHT_TYPE);
+
+// Forward Declarations
+void updateOLED(float temp, float humidity, float waterDist, int gas, const String& status);
+float readUltrasonicCM();
+void sendTelegramAlert(const String& statusType, float temp, float waterDist, int gasVal, bool isClear);
+
+// Sensor Cache
+float currentTemp = 25.0;
+float currentHumidity = 50.0;
+float currentWaterDist = 120.0;
+int gasPPM = 50;
+
+// Timing Trackers
+unsigned long lastFastLoop = 0;
+unsigned long lastDHTLoop = 0;
+unsigned long lastWifiCheck = 0;
+unsigned long lastTelegramDispatch = 0;
+bool previousHazardActive = false;
+bool wifiStatus = false;
+String currentStatus = "CONNECTING...";
+
+float readUltrasonicCM() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH, 20000);
+  if (duration == 0) return 300.0;
+  return (duration * 0.0343) / 2.0;
+}
+
+void sendTelegramAlert(const String& statusType, float temp, float waterDist, int gasVal, bool isClear = false) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(3);
+
+  HTTPClient https;
+  https.setTimeout(3000);
+  String endpoint = "https://api.telegram.org/bot" + String(BOT_TOKEN) + "/sendMessage";
+
+  String alertMsg = "";
+  if (isClear) {
+    alertMsg += "✅ *RAKSHAK ALL-CLEAR NOTICE* ✅\n";
+    alertMsg += "*Device:* `" + String(NODE_ID) + "`\n";
+    alertMsg += "*Status:* *HAZARD RESOLVED (NORMAL)*\n\n";
+    alertMsg += "All sensor parameters have returned to safe operating baselines.\n";
+  } else {
+    alertMsg += "🚨 *RAKSHAK DISASTER ALERT* 🚨\n";
+    alertMsg += "*Device:* `" + String(NODE_ID) + "`\n";
+    alertMsg += "*Condition:* *" + statusType + "*\n\n";
+  }
+
+  alertMsg += "📊 *Live Telemetry:*\n";
+  alertMsg += "• Temp: " + String(temp, 1) + " °C\n";
+  alertMsg += "• Water Clearance: " + String(waterDist, 1) + " cm\n";
+  alertMsg += "• Smoke/Gas: " + String(gasVal) + " PPM\n";
+
+  if (https.begin(client, endpoint)) {
+    https.addHeader("Content-Type", "application/json");
+    StaticJsonDocument<384> jsonDoc;
+    jsonDoc["chat_id"] = CHAT_ID;
+    jsonDoc["text"] = alertMsg;
+    jsonDoc["parse_mode"] = "Markdown";
+    String payload;
+    serializeJson(jsonDoc, payload);
+    https.POST(payload);
+    https.end();
+  }
+}
+
+void updateOLED(float temp, float humidity, float waterDist, int gas, const String& status) {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.print("RAKSHAK NODE");
+  display.drawLine(0, 9, 127, 9, SSD1306_WHITE);
+
+  display.setCursor(0, 13);
+  display.printf("Temp:     %.1f C", temp);
+
+  display.setCursor(0, 23);
+  display.printf("Humidity: %.1f %%", humidity);
+
+  display.setCursor(0, 33);
+  display.printf("Water:    %.1f cm", waterDist);
+
+  display.setCursor(0, 43);
+  display.printf("Gas/Smoke: %d PPM", gas);
+
+  display.drawLine(0, 53, 127, 53, SSD1306_WHITE);
+
+  display.setCursor(0, 56);
+  display.printf("STATUS: %s", status.c_str());
+
+  display.display();
+}
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(I2C_SDA, I2C_SCL);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(GAS_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(DHT_PIN, INPUT_PULLUP);
+
+  dht.begin();
+  display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+
+  updateOLED(currentTemp, currentHumidity, currentWaterDist, gasPPM, "BOOTING...");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  // Allow up to 6 seconds for initial DHCP handshake
+  unsigned long startWifi = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startWifi < 6000)) {
+    delay(150);
+  }
+
+  wifiStatus = (WiFi.status() == WL_CONNECTED);
+  currentStatus = wifiStatus ? "SAFE" : "CONNECTING...";
+  updateOLED(currentTemp, currentHumidity, currentWaterDist, gasPPM, currentStatus);
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // 1. Dynamic background Wi-Fi health monitor (checks every 2 seconds)
+  if (now - lastWifiCheck >= 2000) {
+    lastWifiCheck = now;
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiStatus = true;
+    } else {
+      wifiStatus = false;
+      WiFi.reconnect();
+    }
+  }
+
+  // 2. Read DHT22 every 1.5s
+  if (now - lastDHTLoop >= 1500) {
+    lastDHTLoop = now;
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+    if (!isnan(t)) currentTemp = t;
+    if (!isnan(h)) currentHumidity = h;
+  }
+
+  // 3. High-speed loop (every 100ms) for real-time sliders and OLED
+  if (now - lastFastLoop >= 100) {
+    lastFastLoop = now;
+
+    currentWaterDist = readUltrasonicCM();
+    int rawGas = analogRead(GAS_PIN);
+    gasPPM = map(rawGas, 0, 4095, 20, 1000);
+
+    // Hazard conditions
+    bool isFireRisk = (currentTemp > 40.0 && gasPPM > 400);
+    bool isFloodRisk = (currentWaterDist > 0 && currentWaterDist < 30.0);
+    bool hazardActive = isFireRisk || isFloodRisk;
+
+    if (isFireRisk) {
+      currentStatus = "FIRE_ALERT";
+    } else if (isFloodRisk) {
+      currentStatus = "FLOOD_ALERT";
+    } else {
+      currentStatus = wifiStatus ? "SAFE" : "CONNECTING...";
+    }
+
+    // Hazard State Machine
+    if (hazardActive) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      // Send critical alert on start of hazard or after 15s cooldown
+      if (!previousHazardActive || (now - lastTelegramDispatch > 15000)) {
+        sendTelegramAlert(currentStatus, currentTemp, currentWaterDist, gasPPM, false);
+        lastTelegramDispatch = now;
+      }
+    } else {
+      digitalWrite(BUZZER_PIN, LOW);
+      // RECOVERY TRIGGER: Hazard returned to baseline
+      if (previousHazardActive) {
+        sendTelegramAlert("NORMAL", currentTemp, currentWaterDist, gasPPM, true);
+        lastTelegramDispatch = now;
+      }
+    }
+    previousHazardActive = hazardActive;
+
+    updateOLED(currentTemp, currentHumidity, currentWaterDist, gasPPM, currentStatus);
+  }
+}
