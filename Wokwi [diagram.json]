@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "author": "Rakshak SIH26178",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-s3-devkitc-1", "id": "esp", "top": 40, "left": 10, "attrs": {} },
+    {
+      "type": "board-ssd1306",
+      "id": "oled",
+      "top": 185.54,
+      "left": -172.57,
+      "attrs": { "i2cAddress": "0x3c" }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz",
+      "top": -132,
+      "left": -7.8,
+      "attrs": { "volume": "0.5" }
+    },
+    { "type": "wokwi-dht22", "id": "dht", "top": -120, "left": -110, "attrs": {} },
+    { "type": "wokwi-hc-sr04", "id": "sonar", "top": -132.9, "left": 207.1, "attrs": {} },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "gas_pot",
+      "top": -145.3,
+      "left": 95.8,
+      "attrs": { "label": "MQ Gas Sensor" }
+    }
+  ],
+  "connections": [
+    [ "oled:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "oled:VCC", "esp:3V3.1", "red", [ "v0" ] ],
+    [ "oled:SCL", "esp:9", "yellow", [ "v0" ] ],
+    [ "oled:SDA", "esp:8", "blue", [ "v0" ] ],
+    [ "bz:1", "esp:GND.2", "black", [ "v0" ] ],
+    [ "bz:2", "esp:15", "red", [ "v0" ] ],
+    [ "dht:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "dht:VCC", "esp:3V3.1", "red", [ "v0" ] ],
+    [ "dht:SDA", "esp:10", "green", [ "v0" ] ],
+    [ "sonar:GND", "esp:GND.2", "black", [ "v0" ] ],
+    [ "sonar:VCC", "esp:5V", "red", [ "v0" ] ],
+    [ "sonar:TRIG", "esp:5", "orange", [ "v0" ] ],
+    [ "sonar:ECHO", "esp:6", "purple", [ "v0" ] ],
+    [ "gas_pot:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "gas_pot:VCC", "esp:3V3.2", "red", [ "v0" ] ],
+    [ "gas_pot:SIG", "esp:7", "cyan", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}
