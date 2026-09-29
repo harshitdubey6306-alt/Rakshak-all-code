@@ -1,0 +1,381 @@
+#include <WiFi.h>
+#include <Wire.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include "DHT.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <WebServer.h>
+#include <Harshit7865-project-1_inferencing.h> 
+
+// --- YOUR CREDENTIALS ---
+const char* ssid = "vivo 1901";
+const char* password = "12345678";
+const String supabaseURL = "https://gnqucqttkrfijqnawgfy.supabase.co/rest/v1/sensor_logs";
+const String supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImducXVjcXR0a3JmaWpxbmF3Z2Z5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNTU4MzcsImV4cCI6MjEwNTczMTgzN30.MaCiWeev8l3eLxNAPn010tMF2pAKnfrwxtM2wkvxiK4";
+
+// --- Hardware Pins ---
+#define DHTPIN 15
+#define DHTTYPE DHT11
+#define TRIG_PIN 12
+#define ECHO_PIN 14
+#define MQ2_PIN 32    
+
+#define BUZZER_PIN 2
+#define RGB_RED 4
+#define RGB_GREEN 5
+#define RGB_BLUE 18
+
+DHT dht(DHTPIN, DHTTYPE);
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
+Adafruit_MPU6050 mpu;
+
+#define FEATURE_COUNT 7
+float features[FEATURE_COUNT];
+
+WebServer server(80);
+String lockedAIState = "NORMAL"; 
+unsigned long alertLockTimer = 0;
+String lastSmsState = "NORMAL"; // ADDED: Tracks SMS state so it doesn't spam you
+
+float currentTemp = 25.0;
+float currentHum = 50.0;
+unsigned long lastDHTRead = 0;
+unsigned long lastCloudSync = 0;
+int overallRisk = 5; 
+
+// ==========================================
+// OFFLINE DASHBOARD HTML (WITH INDIA MAP)
+// ==========================================
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>RAKSHAK Local Node</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: white; margin: 0; padding: 20px; text-align: center; }
+        .header { margin-bottom: 20px; }
+        h1 { color: #38bdf8; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 2px;}
+        .card { background: #1e293b; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .metric { background: #0f172a; padding: 15px; border-radius: 8px; border: 1px solid #1e293b;}
+        .metric-title { font-size: 12px; color: #94a3b8; text-transform: uppercase; }
+        .metric-value { font-size: 24px; font-weight: bold; margin-top: 5px; }
+        
+        .map-container { position: relative; width: 100%; max-width: 300px; margin: 0 auto 20px auto; background: #0b1120; border-radius: 12px; padding: 20px; border: 1px solid #334155;}
+        @keyframes pulseNormal { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+        @keyframes pulseFire { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 25px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        @keyframes pulseFlood { 0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); } 70% { box-shadow: 0 0 0 25px rgba(59, 130, 246, 0); } 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } }
+        @keyframes pulseLandslide { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); } 70% { box-shadow: 0 0 0 25px rgba(245, 158, 11, 0); } 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
+        @keyframes pulsePollution { 0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.7); } 70% { box-shadow: 0 0 0 25px rgba(168, 85, 247, 0); } 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); } }
+        
+        .beacon { width: 16px; height: 16px; border-radius: 50%; position: absolute; top: 55%; left: 45%; transform: translate(-50%, -50%); transition: all 0.5s; z-index: 10;}
+        .status-normal { background: #10b981; animation: pulseNormal 2s infinite; }
+        .status-fire { background: #ef4444; animation: pulseFire 1s infinite; }
+        .status-flood { background: #3b82f6; animation: pulseFlood 1s infinite; }
+        .status-landslide { background: #f59e0b; animation: pulseLandslide 1s infinite; }
+        .status-pollution { background: #a855f7; animation: pulsePollution 1s infinite; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>RAKSHAK</h1>
+        <p style="color: #64748b; margin:0;">Autonomous Edge Node 01</p>
+    </div>
+
+    <!-- Interactive India Map -->
+    <div class="map-container">
+        <svg viewBox="0 0 450 520" style="width:100%; opacity: 0.6; fill:#1e293b; stroke:#475569; stroke-width:3;">
+            <path d="M194 0l16 19 28-2 15 15 2 24 19 8 16-6 19 20-3 15 18 10 2 22-16 11-4 22 28 32-15 16 12 18-5 18 13 9 1 12 17-6 12 13-3 17-15 11 1 20-17 19-3 26 15 17-15 24-2 22 17 2 6 25-10 13-17-7-10 7-9 19-14 3-17 16-2 15-30 20-7 29-22 36-21 21-17-1-20-19-14-6-15-22-12-8 3-18-18-29-10-38 1-32-13-10-21-25-13-16-16-16-10-42-12-16-30-7-15-20-22-26-8-27-22-9-19-15-7-2-26 13-11 5-21-6-19 7-23-4-26-17-6-15-23-22-3-22-23-4-23 2-25 10-18 13-13-3-26 2-15-10-12 10-8-5-17 3-17 15-18 13-16 10-26 17-16-5-16 17-5 13-14 6-27-4-19 12-15 21 8 16-17 9-16 16-7 14 7 13 4 19 19 16 14 6 12-7 17 8 11-5 19 6 6-1 12 9 8z"/>
+        </svg>
+        <div id="map-beacon" class="beacon status-normal"></div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin-top:0; color:#cbd5e1; font-size:16px;">NODE STATUS</h2>
+        <h1 id="status" style="color:#10b981; font-size: 32px;">LOADING...</h1>
+        <h3 style="color:#f59e0b; margin:0;">Overall Risk: <span id="risk">--</span>%</h3>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric"><div class="metric-title">Temp</div><div class="metric-value"><span id="t">--</span>&deg;C</div></div>
+        <div class="metric"><div class="metric-title">Humidity</div><div class="metric-value"><span id="h">--</span>%</div></div>
+        <div class="metric"><div class="metric-title">Water Depth</div><div class="metric-value"><span id="w">--</span>cm</div></div>
+        <div class="metric"><div class="metric-title">Gas (MQ-2)</div><div class="metric-value"><span id="g">--</span></div></div>
+        <div class="metric" style="grid-column: span 2;"><div class="metric-title">Seismic Vibration</div><div class="metric-value"><span id="v">--</span>g</div></div>
+    </div>
+
+    <script>
+        setInterval(() => {
+            fetch('/data').then(r => r.json()).then(d => {
+                const statEl = document.getElementById('status');
+                const beacon = document.getElementById('map-beacon');
+                
+                statEl.innerText = d.status.replace('_', ' ');
+                beacon.className = 'beacon'; 
+
+                if (d.status.includes('FIRE')) {
+                    statEl.style.color = '#ef4444';
+                    beacon.classList.add('status-fire');
+                } else if (d.status.includes('FLOOD')) {
+                    statEl.style.color = '#3b82f6';
+                    beacon.classList.add('status-flood');
+                } else if (d.status.includes('LANDSLIDE')) {
+                    statEl.style.color = '#f59e0b';
+                    beacon.classList.add('status-landslide');
+                } else if (d.status.includes('POLLUTION')) {
+                    statEl.style.color = '#a855f7';
+                    beacon.classList.add('status-pollution');
+                } else {
+                    statEl.style.color = '#10b981';
+                    beacon.classList.add('status-normal');
+                }
+
+                document.getElementById('risk').innerText = d.risk;
+                document.getElementById('t').innerText = d.temp.toFixed(1);
+                document.getElementById('h').innerText = d.hum.toFixed(1);
+                document.getElementById('w').innerText = d.water.toFixed(0);
+                document.getElementById('g').innerText = d.gas.toFixed(0);
+                document.getElementById('v').innerText = d.vib.toFixed(2);
+            });
+        }, 1000);
+    </script>
+</body>
+</html>
+)rawliteral";
+
+void handleRoot() {
+  server.send(200, "text/html", index_html);
+}
+
+void handleData() {
+  String json = "{\"status\":\"" + lockedAIState + "\", \"temp\":" + String(features[0]) + ", \"hum\":" + String(features[1]) + ", \"water\":" + String(features[2]) + ", \"gas\":" + String(features[3]) + ", \"vib\":" + String(features[6]) + ", \"risk\":" + String(overallRisk) + "}";
+  server.send(200, "application/json", json);
+}
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(21, 22); 
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) Serial.println("OLED Failed");
+  display.clearDisplay(); display.setTextSize(1); display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0); display.println("RAKSHAK Booting..."); display.display();
+
+  pinMode(TRIG_PIN, OUTPUT); pinMode(ECHO_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(RGB_RED, OUTPUT); pinMode(RGB_GREEN, OUTPUT); pinMode(RGB_BLUE, OUTPUT);
+  pinMode(MQ2_PIN, INPUT);
+
+  dht.begin();
+  if (!mpu.begin()) Serial.println("MPU6050 Failed");
+
+  display.clearDisplay(); display.setCursor(0, 0); display.print("Connecting to: "); display.println(ssid); display.display();
+  
+  WiFi.begin(ssid, password);
+  int retries = 0;
+  while (WiFi.status() != WL_CONNECTED && retries < 20) { delay(500); retries++; }
+  
+  server.on("/", handleRoot);
+  server.on("/data", handleData);
+  server.begin();
+  delay(2000);
+}
+
+void loop() {
+  server.handleClient();
+
+  // 1. READ REAL SENSORS
+  if (millis() - lastDHTRead > 3000) { 
+      float t = dht.readTemperature();
+      float h = dht.readHumidity();
+      if (!isnan(t) && t > -10 && t < 70) currentTemp = t; 
+      if (!isnan(h) && h >= 0 && h <= 100) currentHum = h;
+      lastDHTRead = millis();
+  }
+  
+  features[0] = currentTemp; 
+  features[1] = currentHum; 
+  
+  digitalWrite(TRIG_PIN, LOW); delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH); delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+  float distance = (duration * 0.0343) / 2;
+  features[2] = (duration == 0 || distance > 400) ? 200.0 : distance; 
+  
+  features[3] = analogRead(MQ2_PIN);
+  
+  // True Gravity-Cancelled Vibration Calculation
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+  float totalAccel = sqrt(pow(a.acceleration.x, 2) + pow(a.acceleration.y, 2) + pow(a.acceleration.z, 2));
+  features[6] = abs(totalAccel - 9.81); 
+  
+  // DEADBAND: Ignore tiny desk bumps under 0.3g
+  if (features[6] < 0.3) features[6] = 0.0;
+
+  // Dynamic Mocker for missing hardware
+  features[4] = 30.0; 
+  features[5] = 0.0;  
+  if (features[2] < 50.0 || features[6] > 1.2) {
+      features[4] = 95.0; 
+      features[5] = 80.0; 
+  }
+
+  // 3. RUN AI
+  signal_t signal;
+  numpy::signal_from_buffer(features, FEATURE_COUNT, &signal);
+  ei_impulse_result_t result = { 0 };
+  run_classifier(&signal, &result, false);
+
+  String bestLabel = "";
+  float bestValue = 0.0;
+  for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+      if (result.classification[ix].value > bestValue) {
+          bestValue = result.classification[ix].value;
+          bestLabel = result.classification[ix].label;
+      }
+  }
+
+  // ==========================================
+  // BRUTE-FORCE DUAL-FACTOR LOGIC 
+  // ==========================================
+  
+  // 1. ABSOLUTE GAS SILENCER: If gas is under 2000, ignore any AI fire/smoke hallucination.
+  if (features[3] < 2000.0) {
+      if (bestLabel == "fire_risk" || bestLabel == "pollution") {
+          bestLabel = "normal";
+      }
+  }
+
+  // 2. TRUE GAS THREAT ROUTER (Only runs if gas is 2000+)
+  if (features[3] >= 2000.0) {
+      if (features[0] >= 38.0) {
+          // Gas is high AND temperature is burning hot -> REAL FIRE
+          bestLabel = "fire_risk";
+      } else {
+          // Gas is high BUT temperature is cool/normal -> SEVERE POLLUTION
+          bestLabel = "pollution";
+      }
+  }
+
+  // STRICT LANDSLIDE BLOCKER (Requires actual physical bump)
+  if (bestLabel == "landslide_risk" && features[6] < 0.8) {
+      bestLabel = "normal";
+  }
+
+  // STRICT FLOOD BLOCKER (Requires actual close water depth)
+  if (bestLabel == "flood_risk" && features[2] > 50.0) {
+      bestLabel = "normal";
+  }
+
+  // ==========================================
+  // STATE LOCK / DEBOUNCE (Buzzer stutter fix)
+  // ==========================================
+  if (bestLabel != "normal") {
+      lockedAIState = bestLabel; 
+      alertLockTimer = millis(); 
+  } else {
+      // Must remain quiet and clear for 3 full seconds before shutting off alarm
+      if (millis() - alertLockTimer > 3000) { 
+          lockedAIState = "normal";
+      }
+  }
+
+  lockedAIState.toUpperCase();
+
+  // Calculate Overall Risk %
+  if (lockedAIState == "NORMAL") overallRisk = 5;
+  else if (lockedAIState == "POLLUTION") overallRisk = 75 + (features[3] > 3000 ? 10 : 0);
+  else if (lockedAIState == "FIRE_RISK") overallRisk = 85 + (features[0] > 45.0 ? 10 : 0);
+  else if (lockedAIState == "FLOOD_RISK") overallRisk = 80 + (features[2] < 30.0 ? 15 : 0);
+  else if (lockedAIState == "LANDSLIDE_RISK") overallRisk = 85 + (features[6] > 2.0 ? 10 : 0);
+  if (overallRisk > 100) overallRisk = 100;
+
+  // 4. HARDWARE ALERTS
+  if (lockedAIState == "NORMAL") {
+    digitalWrite(BUZZER_PIN, LOW); 
+    digitalWrite(RGB_GREEN, HIGH); digitalWrite(RGB_RED, LOW); digitalWrite(RGB_BLUE, LOW);
+  } else if (lockedAIState == "LANDSLIDE_RISK" || lockedAIState == "FLOOD_RISK") {
+    digitalWrite(BUZZER_PIN, HIGH); 
+    digitalWrite(RGB_BLUE, HIGH); digitalWrite(RGB_RED, LOW); digitalWrite(RGB_GREEN, LOW);
+  } else if (lockedAIState == "FIRE_RISK") {
+    digitalWrite(BUZZER_PIN, HIGH); 
+    digitalWrite(RGB_RED, HIGH); digitalWrite(RGB_GREEN, LOW); digitalWrite(RGB_BLUE, LOW);
+  } else if (lockedAIState == "POLLUTION") {
+    digitalWrite(BUZZER_PIN, HIGH); 
+    digitalWrite(RGB_RED, HIGH); digitalWrite(RGB_BLUE, HIGH); digitalWrite(RGB_GREEN, LOW); // Purple light
+  }
+
+  // 5. OLED SCREEN UPDATE
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print("IP:"); display.println(WiFi.localIP()); 
+  
+  String shortState = lockedAIState;
+  if(shortState == "LANDSLIDE_RISK") shortState = "L-SLIDE";
+  else if(shortState == "FLOOD_RISK") shortState = "FLOOD";
+  else if(shortState == "FIRE_RISK") shortState = "FIRE";
+  else if(shortState == "POLLUTION") shortState = "SMOKE";
+  
+  display.print("AI:"); display.print(shortState.substring(0,7)); display.print(" Rsk:"); display.print(overallRisk); display.println("%");
+  display.print("T:"); display.print(features[0], 0); display.print("C H:"); display.print(features[1], 0); display.print("% G:"); display.println(features[3], 0);
+  display.print("Wtr:"); display.print(features[2], 0); display.print("cm ");
+  display.print("Vib:"); display.print(features[6], 1); display.println("g");
+  display.display();
+
+  // ==========================================
+  // DIRECT SMS TRIGGER (BYPASSES THE WEBSITE)
+  // ==========================================
+  if (lockedAIState != "NORMAL" && lockedAIState != lastSmsState && WiFi.status() == WL_CONNECTED) {
+      HTTPClient httpSMS;
+      String threatStr = "HAZARD";
+      if (lockedAIState == "FIRE_RISK") threatStr = "FOREST%20FIRE";
+      else if (lockedAIState == "FLOOD_RISK") threatStr = "FLASH%20FLOOD";
+      else if (lockedAIState == "LANDSLIDE_RISK") threatStr = "LANDSLIDE";
+      else if (lockedAIState == "POLLUTION") threatStr = "SEVERE%20POLLUTION";
+      
+      String url = "https://trigger.macrodroid.com/0e56f7cc-ce01-43fc-bff7-e9b751ea4195/rakshak?threat=" + threatStr;
+      httpSMS.begin(url);
+      int smsCode = httpSMS.GET(); // Tells MacroDroid to send the text
+      Serial.print("MacroDroid SMS Trigger Code: ");
+      Serial.println(smsCode);
+      httpSMS.end();
+      
+      lastSmsState = lockedAIState; // Lock it so it only sends 1 text per disaster
+  } else if (lockedAIState == "NORMAL") {
+      lastSmsState = "NORMAL"; // Reset when system is safe
+  }
+
+  // 6. CLOUD SYNC (Sped up to 1000ms for instant SIH presentation response!)
+  if (WiFi.status() == WL_CONNECTED && (millis() - lastCloudSync > 1000)) {
+    HTTPClient http;
+    http.begin(supabaseURL);
+    http.addHeader("apikey", supabaseKey);
+    http.addHeader("Authorization", "Bearer " + supabaseKey);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Prefer", "return=minimal");
+    
+    StaticJsonDocument<200> doc;
+    doc["status"] = lockedAIState; 
+    doc["temperature"] = features[0];
+    doc["humidity"] = features[1];
+    doc["water_clearance"] = features[2];
+    doc["gas"] = features[3];
+    doc["vibration"] = features[6];
+    
+    String payload;
+    serializeJson(doc, payload);
+    
+    // CAPTURE AND PRINT THE ERROR CODE
+    int httpResponseCode = http.POST(payload); 
+    Serial.print("Cloud Upload Status Code: ");
+    Serial.println(httpResponseCode);
+    
+    http.end();
+    lastCloudSync = millis();
+  }
+}
