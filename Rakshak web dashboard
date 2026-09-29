@@ -1,0 +1,238 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAKSHAK | Early Warning System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;600&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .brand-font { font-family: 'Orbitron', sans-serif; }
+        
+        .alert-normal { background-color: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #34d399; }
+        .alert-fire { background-color: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #ef4444; animation: borderPulseFire 2s infinite; }
+        .alert-flood { background-color: rgba(59, 130, 246, 0.15); border-color: #3b82f6; color: #60a5fa; animation: borderPulseFlood 2s infinite; }
+        .alert-landslide { background-color: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #fbbf24; animation: borderPulseLandslide 2s infinite; }
+        .alert-pollution { background-color: rgba(168, 85, 247, 0.15); border-color: #a855f7; color: #c084fc; animation: borderPulsePollution 2s infinite; }
+
+        @keyframes borderPulseFire { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); } 50% { box-shadow: 0 0 20px 5px rgba(239,68,68,0.5); } }
+        @keyframes borderPulseFlood { 0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); } 50% { box-shadow: 0 0 20px 5px rgba(59,130,246,0.5); } }
+        @keyframes borderPulseLandslide { 0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); } 50% { box-shadow: 0 0 20px 5px rgba(245,158,11,0.5); } }
+        @keyframes borderPulsePollution { 0%, 100% { box-shadow: 0 0 0 0 rgba(168,85,247,0); } 50% { box-shadow: 0 0 20px 5px rgba(168,85,247,0.5); } }
+
+        .metric-card { background: #1e293b; border: 1px solid #334155; transition: all 0.3s ease; }
+        
+        @keyframes pulseNormal { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+        @keyframes pulseFire { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.9); } 70% { box-shadow: 0 0 0 35px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        @keyframes pulseFlood { 0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.9); } 70% { box-shadow: 0 0 0 35px rgba(59, 130, 246, 0); } 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } }
+        @keyframes pulseLandslide { 0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.9); } 70% { box-shadow: 0 0 0 35px rgba(245, 158, 11, 0); } 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
+        @keyframes pulsePollution { 0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.9); } 70% { box-shadow: 0 0 0 35px rgba(168, 85, 247, 0); } 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); } }
+        
+        .beacon-cloud { width: 14px; height: 14px; border-radius: 50%; position: absolute; top: 55%; left: 45%; transform: translate(-50%, -50%); transition: all 0.5s; z-index: 10;}
+        .status-normal { background: #10b981; animation: pulseNormal 2s infinite; }
+        .status-fire { background: #ef4444; animation: pulseFire 1s infinite; }
+        .status-flood { background: #3b82f6; animation: pulseFlood 1s infinite; }
+        .status-landslide { background: #f59e0b; animation: pulseLandslide 1s infinite; }
+        .status-pollution { background: #a855f7; animation: pulsePollution 1s infinite; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-4 md:p-8">
+
+    <header class="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+        <div>
+            <h1 class="text-4xl font-black brand-font tracking-wider text-white">
+                <i class="fa-solid fa-shield-halved text-emerald-500 mr-2" id="header-icon"></i>RAKSHAK
+            </h1>
+            <p class="text-slate-400 text-sm mt-1">Autonomous Edge-AI Disaster Node - Central Control</p>
+        </div>
+        <div class="text-right hidden md:block">
+            <div class="flex items-center gap-2 text-sm font-semibold text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/20">
+                <span class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+                Live Database Sync
+            </div>
+            <!-- ERROR LOGGER: This text will change to red if there's a problem -->
+            <p class="text-xs text-slate-500 mt-1" id="last-updated">Connecting to Supabase...</p>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div class="metric-card rounded-xl p-4 flex flex-col items-center relative col-span-1 border-2 border-slate-700">
+            <h3 class="text-slate-400 font-semibold mb-2 w-full text-left text-xs uppercase tracking-widest"><i class="fa-solid fa-location-dot mr-2"></i>Node Deployment Map</h3>
+            <div class="relative w-full max-w-[200px] mt-2">
+                <svg viewBox="0 0 450 520" style="width:100%; opacity: 0.3; fill:#334155; stroke:#64748b; stroke-width:3; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5));">
+                    <path d="M194 0l16 19 28-2 15 15 2 24 19 8 16-6 19 20-3 15 18 10 2 22-16 11-4 22 28 32-15 16 12 18-5 18 13 9 1 12 17-6 12 13-3 17-15 11 1 20-17 19-3 26 15 17-15 24-2 22 17 2 6 25-10 13-17-7-10 7-9 19-14 3-17 16-2 15-30 20-7 29-22 36-21 21-17-1-20-19-14-6-15-22-12-8 3-18-18-29-10-38 1-32-13-10-21-25-13-16-16-16-10-42-12-16-30-7-15-20-22-26-8-27-22-9-19-15-7-2-26 13-11 5-21-6-19 7-23-4-26-17-6-15-23-22-3-22-23-4-23 2-25 10-18 13-13-3-26 2-15-10-12 10-8-5-17 3-17 15-18 13-16 10-26 17-16-5-16 17-5 13-14 6-27-4-19 12-15 21 8 16-17 9-16 16-7 14 7 13 4 19 19 16 14 6 12-7 17 8 11-5 19 6 6-1 12 9 8z"/>
+                </svg>
+                <div id="cloud-beacon" class="beacon-cloud status-normal"></div>
+            </div>
+        </div>
+
+        <div id="threat-banner" class="col-span-1 lg:col-span-2 border-2 rounded-xl p-8 flex flex-col justify-center items-center alert-normal transition-all duration-500 relative overflow-hidden text-center">
+            <div class="absolute top-4 right-4 bg-black/40 px-4 py-2 rounded-lg border border-white/10 backdrop-blur-md">
+                <span class="text-xs uppercase tracking-wider opacity-80 block mb-1 text-slate-300">Overall Risk</span>
+                <div class="text-4xl font-black brand-font" id="val-risk">5%</div>
+            </div>
+            <h2 class="text-3xl md:text-4xl font-bold uppercase tracking-widest mb-4" id="threat-title">System Normal</h2>
+            <p class="text-lg md:text-xl opacity-90 max-w-2xl" id="threat-desc">No imminent environmental threats detected by Edge Nodes.</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden">
+            <i class="fa-solid fa-temperature-three-quarters absolute top-4 right-4 text-2xl opacity-10"></i>
+            <h3 class="text-slate-400 font-semibold text-sm mb-2">Temperature</h3>
+            <div class="flex items-end gap-1"><span class="text-3xl font-bold brand-font" id="val-temp">--</span><span class="text-slate-500 mb-1">°C</span></div>
+        </div>
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden">
+            <i class="fa-solid fa-droplet absolute top-4 right-4 text-2xl opacity-10"></i>
+            <h3 class="text-slate-400 font-semibold text-sm mb-2">Humidity</h3>
+            <div class="flex items-end gap-1"><span class="text-3xl font-bold brand-font" id="val-hum">--</span><span class="text-slate-500 mb-1">%</span></div>
+        </div>
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden">
+            <i class="fa-solid fa-water absolute top-4 right-4 text-2xl opacity-10"></i>
+            <h3 class="text-slate-400 font-semibold text-sm mb-2">Water Depth</h3>
+            <div class="flex items-end gap-1"><span class="text-3xl font-bold brand-font" id="val-water">--</span><span class="text-slate-500 mb-1">cm</span></div>
+        </div>
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden">
+            <i class="fa-solid fa-smog absolute top-4 right-4 text-2xl opacity-10"></i>
+            <h3 class="text-slate-400 font-semibold text-sm mb-2">Gas (MQ-2)</h3>
+            <div class="flex items-end gap-1"><span class="text-3xl font-bold brand-font" id="val-gas">--</span><span class="text-slate-500 mb-1">ppm</span></div>
+        </div>
+        <div class="metric-card rounded-xl p-5 relative overflow-hidden col-span-2 lg:col-span-1 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+            <i class="fa-solid fa-house-crack absolute top-4 right-4 text-2xl opacity-10"></i>
+            <h3 class="text-slate-400 font-semibold text-sm mb-2">Vibration</h3>
+            <div class="flex items-end gap-1"><span class="text-3xl font-bold brand-font" id="val-vib">--</span><span class="text-slate-500 mb-1">g</span></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://gnqucqttkrfijqnawgfy.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImducXVjcXR0a3JmaWpxbmF3Z2Z5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNTU4MzcsImV4cCI6MjEwNTczMTgzN30.MaCiWeev8l3eLxNAPn010tMF2pAKnfrwxtM2wkvxiK4';
+        const MACRODROID_URL = 'https://trigger.macrodroid.com/0e56f7cc-ce01-43fc-bff7-e9b751ea4195/rakshak';
+        
+        let lastStatus = 'normal';
+
+        function updateUI(data) {
+            try {
+                // Failsafe numbering to prevent NaN crashing the UI
+                document.getElementById('val-temp').innerText = data.temperature != null ? Number(data.temperature).toFixed(1) : '--';
+                document.getElementById('val-hum').innerText = data.humidity != null ? Number(data.humidity).toFixed(1) : '--';
+                document.getElementById('val-water').innerText = data.water_clearance != null ? Number(data.water_clearance).toFixed(0) : '--';
+                document.getElementById('val-gas').innerText = data.gas != null ? Number(data.gas).toFixed(0) : '--';
+                document.getElementById('val-vib').innerText = data.vibration != null ? Number(data.vibration).toFixed(2) : '--';
+
+                const date = new Date(data.created_at || Date.now());
+                document.getElementById('last-updated').innerText = 'Live Sync: ' + date.toLocaleTimeString();
+                document.getElementById('last-updated').className = 'text-xs text-emerald-400 mt-1';
+
+                const banner = document.getElementById('threat-banner');
+                const title = document.getElementById('threat-title');
+                const desc = document.getElementById('threat-desc');
+                const icon = document.getElementById('header-icon');
+                const cloudBeacon = document.getElementById('cloud-beacon');
+
+                banner.className = 'col-span-1 lg:col-span-2 border-2 rounded-xl p-8 flex flex-col justify-center items-center transition-all duration-500 relative overflow-hidden text-center';
+                icon.className = 'fa-solid fa-shield-halved mr-2';
+                cloudBeacon.className = 'beacon-cloud';
+
+                const currentStatus = data.status ? data.status.toLowerCase() : 'normal';
+                
+                // MacroDroid SMS Trigger
+                if (currentStatus !== 'normal' && currentStatus !== lastStatus) {
+                    let threatName = "HAZARD";
+                    if (currentStatus.includes('fire')) threatName = "FOREST FIRE";
+                    else if (currentStatus.includes('flood')) threatName = "FLASH FLOOD";
+                    else if (currentStatus.includes('landslide')) threatName = "LANDSLIDE";
+                    else if (currentStatus.includes('pollution')) threatName = "SEVERE POLLUTION";
+
+                    fetch(MACRODROID_URL + "?threat=" + encodeURIComponent(threatName), { mode: 'no-cors' }).catch(e => console.log("SMS Ignored"));
+                }
+                lastStatus = currentStatus;
+                
+                // UI Updating
+                if (currentStatus.includes('fire')) {
+                    document.getElementById('val-risk').innerText = '92%';
+                    document.getElementById('val-risk').className = 'text-4xl font-black brand-font text-red-400';
+                    banner.classList.add('alert-fire');
+                    cloudBeacon.classList.add('status-fire');
+                    title.innerText = 'CRITICAL: FIRE RISK DETECTED';
+                    desc.innerText = 'Thermal & Gas anomalies indicate severe fire risk. Evacuation protocols initiated.';
+                    icon.classList.add('text-red-500');
+                } else if (currentStatus.includes('flood')) {
+                    document.getElementById('val-risk').innerText = '88%';
+                    document.getElementById('val-risk').className = 'text-4xl font-black brand-font text-blue-400';
+                    banner.classList.add('alert-flood');
+                    cloudBeacon.classList.add('status-flood');
+                    title.innerText = 'WARNING: FLASH FLOOD RISK';
+                    desc.innerText = 'Rapid water clearance reduction detected. Move to higher ground immediately.';
+                    icon.classList.add('text-blue-500');
+                } else if (currentStatus.includes('landslide')) {
+                    document.getElementById('val-risk').innerText = '85%';
+                    document.getElementById('val-risk').className = 'text-4xl font-black brand-font text-amber-400';
+                    banner.classList.add('alert-landslide');
+                    cloudBeacon.classList.add('status-landslide');
+                    title.innerText = 'WARNING: LANDSLIDE RISK';
+                    desc.innerText = 'Soil saturation and vibration anomalies detected. Unstable terrain.';
+                    icon.classList.add('text-amber-500');
+                } else if (currentStatus.includes('pollution')) {
+                    document.getElementById('val-risk').innerText = '75%';
+                    document.getElementById('val-risk').className = 'text-4xl font-black brand-font text-purple-400';
+                    banner.classList.add('alert-pollution');
+                    cloudBeacon.classList.add('status-pollution');
+                    title.innerText = 'WARNING: SEVERE AIR POLLUTION';
+                    desc.innerText = 'Toxic gas concentrations have exceeded safe limits (CPCB Protocol). Avoid outdoor exposure.';
+                    icon.classList.add('text-purple-500');
+                } else {
+                    document.getElementById('val-risk').innerText = '5%';
+                    document.getElementById('val-risk').className = 'text-4xl font-black brand-font text-emerald-400';
+                    banner.classList.add('alert-normal');
+                    cloudBeacon.classList.add('status-normal');
+                    title.innerText = 'System Normal';
+                    desc.innerText = 'All environmental metrics within safe baseline parameters.';
+                    icon.classList.add('text-emerald-500');
+                }
+            } catch (err) {
+                console.error("UI Update Error:", err);
+            }
+        }
+
+        async function fetchSupabaseDirectly() {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/sensor_logs?select=*&order=created_at.desc&limit=1`, {
+                    method: 'GET',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    updateUI(data[0]);
+                }
+            } catch (error) {
+                document.getElementById('last-updated').innerText = 'Error: ' + error.message;
+                document.getElementById('last-updated').className = 'text-xs text-red-500 mt-1';
+                console.error("Direct fetch failed:", error);
+            }
+        }
+
+        // Fetch exactly every 1.5 seconds.
+        setInterval(fetchSupabaseDirectly, 1500);
+        fetchSupabaseDirectly();
+    </script>
+</body>
+</html>
+```
